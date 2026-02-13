@@ -34,10 +34,20 @@ function createStreamRoutes(streamManager, outputDir) {
                 return res.status(404).send('Playlist not ready');
             }
 
-            const content = await fs.readFile(playlistPath, 'utf-8');
+            let content = await fs.readFile(playlistPath, 'utf-8');
+
+            // Cache Busting / Serialization
+            // Append stream start time to segment URLs to prevent playing cached segments from previous sessions
+            const streamInfo = streamManager.getStreamStatus(channelId);
+            if (streamInfo) {
+                const version = streamInfo.startTime;
+                content = content.replace(/^(.*\.ts)$/gm, `$1?v=${version}`);
+            }
 
             res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, proxy-revalidate, max-age=0');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
             res.setHeader('Access-Control-Allow-Origin', '*');
             res.send(content);
         } catch (error) {
