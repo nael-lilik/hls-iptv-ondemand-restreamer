@@ -34,9 +34,8 @@ class FFmpegService {
         } = options;
 
         const args = [
-            '-re', // Read input at native frame rate
-            '-analyzeduration', '1000000',
-            '-probesize', '1000000',
+            '-analyzeduration', '10000000', // Increased to 10s for stability
+            '-probesize', '10000000', // Increased to 10MB for stability
             '-i', sourceUrl,
             '-c:v', videoCodec,
             '-preset', preset,
