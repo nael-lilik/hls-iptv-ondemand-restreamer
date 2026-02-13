@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  hls-restreamer:
+    build: .
+    container_name: hls-iptv-restreamer
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - PLAYLIST_URL=https://iptv-org.github.io/iptv/index.m3u
+      - HLS_OUTPUT_DIR=/tmp/hls
+    volumes:
+      - hls-data:/tmp/hls
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  hls-data:
+    driver: local
