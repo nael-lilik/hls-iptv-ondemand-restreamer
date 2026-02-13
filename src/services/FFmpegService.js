@@ -46,10 +46,10 @@ class FFmpegService {
         // Add Video Filters (Scaling & FPS) with no-upscale protection
         const videoFilters = [];
         if (resolution) {
-            const targetWidth = resolution.includes(':') ? resolution.split(':')[0] : (resolution.includes('x') ? resolution.split('x')[0] : resolution);
+            const targetWidth = (resolution.includes(':') ? resolution.split(':')[0] : (resolution.includes('x') ? resolution.split('x')[0] : resolution)).trim();
             // Only downscale if input width (iw) is larger than targetWidth. -2 maintains aspect ratio and even dimensions.
             if (!isNaN(targetWidth)) {
-                videoFilters.push(`scale='min(${targetWidth},iw)':-2`);
+                videoFilters.push(`scale=min(${targetWidth}\\,iw):-2`);
             } else {
                 videoFilters.push(`scale=${resolution}`);
             }
