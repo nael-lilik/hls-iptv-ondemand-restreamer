@@ -95,12 +95,15 @@ app.listen(PORT, () => {
     console.log(`Session Timeout: ${SESSION_TIMEOUT}ms`);
     console.log('='.repeat(50));
 
-    // Preload playlist
-    playlistService.fetchPlaylist()
-        .then(channels => {
+    // Preload playlist and generate offline assets
+    Promise.all([
+        playlistService.fetchPlaylist(),
+        ffmpegService.generateOfflineStream()
+    ])
+        .then(([channels]) => {
             console.log(`Loaded ${channels.length} channels from playlist`);
         })
         .catch(error => {
-            console.error('Failed to load initial playlist:', error.message);
+            console.error('Failed to initialize:', error);
         });
 });

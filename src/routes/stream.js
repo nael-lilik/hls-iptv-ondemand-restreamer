@@ -11,9 +11,9 @@ function createStreamRoutes(streamManager, outputDir) {
         const playlistPath = path.join(outputDir, channelId, 'playlist.m3u8');
 
         try {
-            // Check if stream exists in manager
+            // Check if stream exists in manager (skip for _offline_)
             const streamStatus = streamManager.getStreamStatus(channelId);
-            if (!streamStatus) {
+            if (!streamStatus && channelId !== '_offline_') {
                 return res.status(404).send('Stream not found');
             }
 
@@ -30,8 +30,18 @@ function createStreamRoutes(streamManager, outputDir) {
             }
 
             if (!fileReady) {
-                console.error(`Playlist file still not ready after 10s for channel ${channelId}`);
-                return res.status(404).send('Playlist not ready');
+                console.warn(`Playlist not ready for ${channelId}, serving offline feed`);
+                // Fallback to offline stream
+                const offlinePath = path.join(outputDir, '_offline_', 'playlist.m3u8');
+                let offlineContent = await fs.readFile(offlinePath, 'utf-8');
+
+                // Rewrite segments to point to _offline_ channel
+                offlineContent = offlineContent.replace(/^(.*\.ts)$/gm, '/stream/_offline_/$1');
+
+                res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                return res.send(offlineContent);
             }
 
             let content = await fs.readFile(playlistPath, 'utf-8');

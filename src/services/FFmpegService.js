@@ -145,6 +145,49 @@ class FFmpegService {
         }
     }
 
+    async generateOfflineStream() {
+        const channelId = '_offline_';
+        const channelDir = await this.ensureOutputDir(channelId);
+        const playlistPath = path.join(channelDir, 'playlist.m3u8');
+
+        // Check if offline stream already exists
+        try {
+            await fs.access(playlistPath);
+            console.log('Offline stream assets already exist.');
+            return;
+        } catch (e) {
+            // Not found, generate it
+        }
+
+        console.log('Generating offline stream assets...');
+
+        const args = [
+            '-f', 'lavfi', '-i', 'smptebars=size=1280x720:rate=25',
+            '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=6', // 1 beep for 6s
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+            '-c:a', 'aac', '-b:a', '128k',
+            '-t', '6', // Duration 6s
+            '-f', 'hls',
+            '-hls_time', '6',
+            '-hls_list_size', '1',
+            '-hls_flags', 'single_file', // Single file is better for static loop
+            path.join(channelDir, 'playlist.m3u8')
+        ];
+
+        return new Promise((resolve, reject) => {
+            const ffmpeg = spawn('ffmpeg', args);
+            ffmpeg.on('close', (code) => {
+                if (code === 0) {
+                    console.log('Offline stream generated successfully.');
+                    resolve();
+                } else {
+                    console.error('Failed to generate offline stream, code:', code);
+                    reject(new Error('FFmpeg failed'));
+                }
+            });
+        });
+    }
+
     async getPlaylistContent(channelId) {
         const playlistPath = path.join(this.outputDir, channelId, 'playlist.m3u8');
         try {
