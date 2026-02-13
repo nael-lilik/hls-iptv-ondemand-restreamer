@@ -34,8 +34,10 @@ class FFmpegService {
         } = options;
 
         const args = [
-            '-analyzeduration', '10000000', // Increased to 10s for stability
-            '-probesize', '10000000', // Increased to 10MB for stability
+            '-analyzeduration', '25000000', // Increased to 25s
+            '-probesize', '25000000', // Increased to 25MB
+            '-fflags', '+genpts+discardcorrupt', // Generate PTS if missing, discard corrupt packets
+            '-err_detect', 'ignore_err', // Ignore decoding errors
             '-i', sourceUrl,
             '-c:v', videoCodec,
             '-preset', preset,
