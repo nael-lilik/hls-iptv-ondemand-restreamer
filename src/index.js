@@ -8,6 +8,7 @@ const PlaylistService = require('./services/PlaylistService');
 const FFmpegService = require('./services/FFmpegService');
 const StreamManager = require('./services/StreamManager');
 const SessionManager = require('./services/SessionManager');
+const StateManager = require('./services/StateManager');
 
 // Routes
 const createApiRoutes = require('./routes/api');
@@ -22,8 +23,9 @@ const SESSION_TIMEOUT = parseInt(process.env.SESSION_TIMEOUT) || 30000;
 // Initialize services
 const playlistService = new PlaylistService(PLAYLIST_URL);
 const ffmpegService = new FFmpegService(HLS_OUTPUT_DIR);
-const streamManager = new StreamManager(ffmpegService);
-const sessionManager = new SessionManager(streamManager, SESSION_TIMEOUT);
+const stateManager = new StateManager(path.join(__dirname, '..', 'data'));
+const streamManager = new StreamManager(ffmpegService, stateManager);
+const sessionManager = new SessionManager(streamManager, SESSION_TIMEOUT, stateManager);
 
 // Create Express app
 const app = express();
@@ -95,15 +97,26 @@ app.listen(PORT, () => {
     console.log(`Session Timeout: ${SESSION_TIMEOUT}ms`);
     console.log('='.repeat(50));
 
-    // Preload playlist and generate offline assets
-    Promise.all([
-        playlistService.fetchPlaylist(),
-        ffmpegService.generateOfflineStream()
-    ])
-        .then(([channels]) => {
+    // Initialize state and load assets
+    (async () => {
+        try {
+            // 1. Init Data Directory
+            await stateManager.init();
+
+            // 2. Preload Playlist & Offline Assets
+            const [channels] = await Promise.all([
+                playlistService.fetchPlaylist(),
+                ffmpegService.generateOfflineStream()
+            ]);
             console.log(`Loaded ${channels.length} channels from playlist`);
-        })
-        .catch(error => {
+
+            // 3. Restore State (Streams first, then Sessions)
+            // Note: restoring streams will start FFmpeg processes
+            await streamManager.restoreState();
+            await sessionManager.restoreState();
+
+        } catch (error) {
             console.error('Failed to initialize:', error);
-        });
+        }
+    })();
 });

@@ -1,14 +1,51 @@
 const FFmpegService = require('./FFmpegService');
 
 class StreamManager {
-    constructor(ffmpegService) {
+    constructor(ffmpegService, stateManager) {
         this.ffmpegService = ffmpegService;
-        this.streams = new Map(); // channelId -> { process, viewers: Set, startTime, status }
+        this.stateManager = stateManager;
+        this.streams = new Map(); // channelId -> { process, viewers: Set, startTime, status, sourceUrl }
 
         // Start periodic cleanup
         this.cleanupInterval = setInterval(() => {
             this.cleanupStaleStreams();
         }, parseInt(process.env.CLEANUP_INTERVAL) || 60000);
+    }
+
+    async restoreState() {
+        if (!this.stateManager) return;
+
+        const savedStreams = await this.stateManager.loadStreams();
+        console.log(`Restoring ${savedStreams.length} streams from state...`);
+
+        for (const s of savedStreams) {
+            try {
+                // Determine source URL (might need to fetch from playlist service normally, but here we saved it)
+                // If sourceUrl is not saved, we might skip or re-fetch playlist. 
+                // For simplicity, we assume we saved sourceUrl.
+                if (s.channelId && s.sourceUrl) {
+                    console.log(`Restoring stream: ${s.channelId}`);
+                    await this.startStream(s.channelId, s.sourceUrl);
+                }
+            } catch (err) {
+                console.error(`Failed to restore stream ${s.channelId}:`, err);
+            }
+        }
+    }
+
+    async saveState() {
+        if (!this.stateManager) return;
+
+        const streamsToSave = [];
+        for (const [channelId, stream] of this.streams.entries()) {
+            if (stream.status === 'running' || stream.status === 'starting') {
+                streamsToSave.push({
+                    channelId,
+                    sourceUrl: stream.sourceUrl
+                });
+            }
+        }
+        await this.stateManager.saveStreams(streamsToSave);
     }
 
     async startStream(channelId, sourceUrl) {
@@ -40,6 +77,7 @@ class StreamManager {
             };
 
             this.streams.set(channelId, streamInfo);
+            this.saveState(); // Save state
 
             // Update status to running after a short delay
             setTimeout(() => {
@@ -54,6 +92,7 @@ class StreamManager {
                 if (this.streams.has(channelId)) {
                     const stream = this.streams.get(channelId);
                     stream.status = 'stopped';
+                    this.saveState(); // Update state on exit
 
                     // Auto-restart if there are still viewers and exit was unexpected
                     if (stream.viewers.size > 0 && code !== 0) {
@@ -119,6 +158,7 @@ class StreamManager {
 
             // Remove from active streams
             this.streams.delete(channelId);
+            this.saveState(); // Save state
 
             return true;
         }
@@ -134,7 +174,8 @@ class StreamManager {
                 viewers: stream.viewers.size,
                 startTime: stream.startTime,
                 uptime: Date.now() - stream.startTime,
-                playlistPath: stream.playlistPath
+                playlistPath: stream.playlistPath,
+                sourceUrl: stream.sourceUrl
             };
         }
         return null;

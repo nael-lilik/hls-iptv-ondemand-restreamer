@@ -1,13 +1,44 @@
 class SessionManager {
-    constructor(streamManager, sessionTimeout = 30000) {
+    constructor(streamManager, sessionTimeout = 30000, stateManager) {
         this.streamManager = streamManager;
         this.sessionTimeout = sessionTimeout;
+        this.stateManager = stateManager;
         this.sessions = new Map(); // sessionId -> { channelId, lastHeartbeat }
 
         // Start cleanup interval
         this.cleanupInterval = setInterval(() => {
             this.cleanupStaleSessions();
         }, 10000); // Check every 10 seconds
+    }
+
+    async restoreState() {
+        if (!this.stateManager) return;
+
+        const savedSessions = await this.stateManager.loadSessions();
+        console.log(`Restoring ${savedSessions.length} sessions from state...`);
+
+        for (const s of savedSessions) {
+            this.sessions.set(s.sessionId, {
+                channelId: s.channelId,
+                lastHeartbeat: Date.now() // Reset heartbeat on restore to give grace buffer
+            });
+            // Re-add to stream manager viewer count
+            this.streamManager.addViewer(s.channelId, s.sessionId);
+        }
+    }
+
+    async saveState() {
+        if (!this.stateManager) return;
+
+        const sessionsToSave = [];
+        for (const [sessionId, session] of this.sessions.entries()) {
+            sessionsToSave.push({
+                sessionId,
+                channelId: session.channelId,
+                // We don't save lastHeartbeat to avoid immediate timeout on restore
+            });
+        }
+        await this.stateManager.saveSessions(sessionsToSave);
     }
 
     createSession(sessionId, channelId) {
@@ -17,6 +48,7 @@ class SessionManager {
         });
 
         console.log(`Session created: ${sessionId} for channel ${channelId}`);
+        this.saveState();
         return true;
     }
 
@@ -39,6 +71,7 @@ class SessionManager {
 
             // Notify stream manager to remove viewer
             this.streamManager.removeViewer(channelId, sessionId);
+            this.saveState();
             return true;
         }
         return false;
