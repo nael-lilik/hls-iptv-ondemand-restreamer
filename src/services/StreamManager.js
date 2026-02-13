@@ -111,10 +111,10 @@ class StreamManager {
         if (stream) {
             console.log(`Stopping stream for channel ${channelId}`);
 
-            // Stop FFmpeg process
-            this.ffmpegService.stopTranscoding(stream.process);
+            // Stop FFmpeg process and wait for it to exit
+            await this.ffmpegService.stopTranscoding(stream.process);
 
-            // Cleanup files
+            // Cleanup files after process is gone
             await this.ffmpegService.cleanupChannelDir(channelId);
 
             // Remove from active streams

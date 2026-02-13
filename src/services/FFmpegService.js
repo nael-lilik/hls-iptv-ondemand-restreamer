@@ -27,20 +27,45 @@ class FFmpegService {
             videoCodec = process.env.FFMPEG_VIDEO_CODEC || 'libx264',
             audioCodec = process.env.FFMPEG_AUDIO_CODEC || 'aac',
             audioBitrate = process.env.FFMPEG_AUDIO_BITRATE || '128k',
+            fps = process.env.FFMPEG_FPS || null,
+            resolution = process.env.FFMPEG_RESOLUTION || null,
             segmentDuration = process.env.HLS_SEGMENT_DURATION || '6',
             listSize = process.env.HLS_LIST_SIZE || '10'
         } = options;
 
         const args = [
             '-re', // Read input at native frame rate
-            '-analyzeduration', '1000000', // Limit analysis duration to 1s
-            '-probesize', '1000000', // Limit probe size to 1MB
+            '-analyzeduration', '1000000',
+            '-probesize', '1000000',
             '-i', sourceUrl,
             '-c:v', videoCodec,
             '-preset', preset,
-            '-tune', 'zerolatency',
+            '-tune', 'zerolatency'
+        ];
+
+        // Add Video Filters (Scaling & FPS) with no-upscale protection
+        const videoFilters = [];
+        if (resolution) {
+            const targetWidth = resolution.includes(':') ? resolution.split(':')[0] : (resolution.includes('x') ? resolution.split('x')[0] : resolution);
+            // Only downscale if input width (iw) is larger than targetWidth. -2 maintains aspect ratio and even dimensions.
+            if (!isNaN(targetWidth)) {
+                videoFilters.push(`scale='min(${targetWidth},iw)':-2`);
+            } else {
+                videoFilters.push(`scale=${resolution}`);
+            }
+        }
+        if (fps) {
+            videoFilters.push(`fps=${fps}`);
+        }
+
+        if (videoFilters.length > 0) {
+            args.push('-vf', videoFilters.join(','));
+        }
+
+        args.push(
             '-c:a', audioCodec,
             '-b:a', audioBitrate,
+            '-copyts', // Help with stream stability
             '-f', 'hls',
             '-hls_time', segmentDuration,
             '-hls_list_size', listSize,
@@ -49,7 +74,7 @@ class FFmpegService {
             '-loglevel', 'warning',
             '-stats',
             playlistPath
-        ];
+        );
 
         console.log(`Starting FFmpeg for channel ${channelId}`);
         console.log(`Command: ffmpeg ${args.join(' ')}`);
@@ -58,6 +83,10 @@ class FFmpegService {
             stdio: ['ignore', 'pipe', 'pipe']
         });
 
+        // Track process state
+        ffmpegProcess.isExited = false;
+        ffmpegProcess.on('exit', () => { ffmpegProcess.isExited = true; });
+
         // Log FFmpeg output
         ffmpegProcess.stdout.on('data', (data) => {
             console.log(`[FFmpeg ${channelId}] ${data.toString().trim()}`);
@@ -65,7 +94,7 @@ class FFmpegService {
 
         ffmpegProcess.stderr.on('data', (data) => {
             const message = data.toString().trim();
-            if (message) {
+            if (message && !message.includes('frame=')) {
                 console.log(`[FFmpeg ${channelId}] ${message}`);
             }
         });
@@ -85,22 +114,26 @@ class FFmpegService {
         };
     }
 
-    stopTranscoding(ffmpegProcess) {
-        if (ffmpegProcess && !ffmpegProcess.killed) {
-            console.log('Stopping FFmpeg process');
-            ffmpegProcess.kill('SIGTERM');
+    async stopTranscoding(ffmpegProcess) {
+        if (!ffmpegProcess || ffmpegProcess.isExited) return true;
 
-            // Force kill if not stopped after 5 seconds
-            setTimeout(() => {
-                if (!ffmpegProcess.killed) {
-                    console.log('Force killing FFmpeg process');
+        return new Promise((resolve) => {
+            const killTimeout = setTimeout(() => {
+                if (!ffmpegProcess.isExited) {
+                    console.log('Force killing FFmpeg process after timeout');
                     ffmpegProcess.kill('SIGKILL');
                 }
+                resolve(true);
             }, 5000);
 
-            return true;
-        }
-        return false;
+            ffmpegProcess.once('exit', () => {
+                clearTimeout(killTimeout);
+                resolve(true);
+            });
+
+            console.log('Sending SIGTERM to FFmpeg process');
+            ffmpegProcess.kill('SIGTERM');
+        });
     }
 
     async cleanupChannelDir(channelId) {
