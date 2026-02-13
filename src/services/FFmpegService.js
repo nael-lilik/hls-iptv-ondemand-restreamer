@@ -28,6 +28,7 @@ class FFmpegService {
             audioCodec = process.env.FFMPEG_AUDIO_CODEC || 'aac',
             audioBitrate = process.env.FFMPEG_AUDIO_BITRATE || '128k',
             fps = process.env.FFMPEG_FPS || null,
+            resolution = process.env.FFMPEG_RESOLUTION || null, // e.g., '1280:720' or '1280:-1'
             segmentDuration = process.env.HLS_SEGMENT_DURATION || '6',
             listSize = process.env.HLS_LIST_SIZE || '10'
         } = options;
@@ -42,9 +43,18 @@ class FFmpegService {
             '-tune', 'zerolatency'
         ];
 
-        // Add FPS restriction if specified
+        // Add Video Filters (Scaling & FPS)
+        const videoFilters = [];
+        if (resolution) {
+            // Using scale filter. Example: scale=1280:720 or scale=1280:-2 (keeps aspect ratio)
+            videoFilters.push(`scale=${resolution}`);
+        }
         if (fps) {
-            args.push('-r', fps);
+            videoFilters.push(`fps=${fps}`);
+        }
+
+        if (videoFilters.length > 0) {
+            args.push('-vf', videoFilters.join(','));
         }
 
         args.push(
