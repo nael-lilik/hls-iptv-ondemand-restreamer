@@ -27,6 +27,7 @@ class FFmpegService {
             videoCodec = process.env.FFMPEG_VIDEO_CODEC || 'libx264',
             audioCodec = process.env.FFMPEG_AUDIO_CODEC || 'aac',
             audioBitrate = process.env.FFMPEG_AUDIO_BITRATE || '128k',
+            fps = process.env.FFMPEG_FPS || null,
             segmentDuration = process.env.HLS_SEGMENT_DURATION || '6',
             listSize = process.env.HLS_LIST_SIZE || '10'
         } = options;
@@ -38,7 +39,15 @@ class FFmpegService {
             '-i', sourceUrl,
             '-c:v', videoCodec,
             '-preset', preset,
-            '-tune', 'zerolatency',
+            '-tune', 'zerolatency'
+        ];
+
+        // Add FPS restriction if specified
+        if (fps) {
+            args.push('-r', fps);
+        }
+
+        args.push(
             '-c:a', audioCodec,
             '-b:a', audioBitrate,
             '-f', 'hls',
@@ -49,7 +58,7 @@ class FFmpegService {
             '-loglevel', 'warning',
             '-stats',
             playlistPath
-        ];
+        );
 
         console.log(`Starting FFmpeg for channel ${channelId}`);
         console.log(`Command: ffmpeg ${args.join(' ')}`);
